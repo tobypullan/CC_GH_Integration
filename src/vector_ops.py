@@ -17,4 +17,4 @@ def multiply_vectors(x, y):
 
 def dot_vectors(x, y):
     """Compute the dot product of two JAX arrays."""
-    pass
+    return jnp.dot(x, y)
