@@ -8,8 +8,7 @@ def add_vectors(x, y):
 
 def subtract_vectors(x, y):
     """Subtract two JAX arrays element-wise."""
-    # Intentional bug: using + instead of -
-    return x + y  # BUG: This should be x - y
+    return x - y
 
 
 def multiply_vectors(x, y):
