@@ -34,7 +34,3 @@ def transpose_vector(x):
     else:
         # Standard transpose for 2D+ arrays
         return jnp.transpose(x)
-
-print(jnp.array([1,2,3]).shape)
-print(transpose_vector(jnp.array([1,2,3])).shape)
-print(transpose_vector(jnp.array([1,2,3])))
