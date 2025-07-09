@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ['3.8', '3.9', '3.10', '3.11']
+        python-version: ['3.9', '3.11']
     
     steps:
     - name: Checkout code
@@ -25,14 +25,7 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y \
-          libopenmpi-dev \
-          openmpi-bin \
-          libhdf5-openmpi-dev \
-          libhdf5-dev \
-          hdf5-tools \
-          build-essential \
-          gfortran
+        sudo apt-get install -y libopenmpi-dev openmpi-bin libhdf5-openmpi-dev libhdf5-dev hdf5-tools build-essential gfortran
     
     - name: Cache pip packages
       uses: actions/cache@v3
@@ -43,54 +36,28 @@ jobs:
           ${{ runner.os }}-pip-${{ matrix.python-version }}-
           ${{ runner.os }}-pip-
     
-    - name: Upgrade pip and install build tools
+    - name: Install Python dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install wheel setuptools
-    
-    - name: Install mpi4py with Open-MPI
-      run: |
-        # Set environment variables for mpi4py compilation
-        export MPICC=/usr/bin/mpicc
-        export HDF5_MPI="ON"
+        python -m pip install --upgrade pip wheel setuptools
+        # Install mpi4py with Open-MPI
+        export MPICC=/usr/bin/mpicc HDF5_MPI="ON"
         pip install --no-binary mpi4py mpi4py
-    
-    - name: Install h5py with MPI support
-      run: |
         # Install h5py with MPI support
-        export HDF5_MPI="ON"
-        export HDF5_DIR=/usr/lib/x86_64-linux-gnu/hdf5/openmpi
-        export CC=mpicc
+        export HDF5_DIR=/usr/lib/x86_64-linux-gnu/hdf5/openmpi CC=mpicc
         pip install --no-binary h5py h5py
-    
-    - name: Install other Python dependencies
-      run: |
-        # Install your other dependencies here
-        # pip install -r requirements.txt
+        # Install other dependencies
         pip install numpy scipy matplotlib
+        pip install -r requirements.txt
     
-    - name: Verify installations
+    - name: Verify MPI and HDF5 setup
       run: |
-        echo "=== System Information ==="
-        lsb_release -a
-        echo ""
-        echo "=== MPI Information ==="
-        mpirun --version
-        which mpicc
-        which mpirun
-        echo ""
-        echo "=== HDF5 Information ==="
-        h5cc -showconfig | grep -E "Parallel HDF5|Version"
-        echo ""
-        echo "=== Python Information ==="
-        python --version
+        echo "=== Verification ==="
+        mpirun --version | head -1
         python -c "import mpi4py; print(f'mpi4py version: {mpi4py.__version__}')"
-        python -c "import h5py; print(f'h5py version: {h5py.__version__}')"
-        python -c "import h5py; print(f'h5py MPI support: {h5py.get_config().mpi}')"
+        python -c "import h5py; print(f'h5py version: {h5py.__version__}, MPI support: {h5py.get_config().mpi}')"
     
     - name: Run MPI test
       run: |
-        # Create a simple MPI test
         cat > test_mpi.py << 'EOF'
         from mpi4py import MPI
         import numpy as np
@@ -102,14 +69,11 @@ jobs:
         
         print(f"Process {rank} of {size} is running")
         
-        # Test h5py with MPI
         if size > 1:
-            # Create a parallel HDF5 file
             with h5py.File('parallel_test.h5', 'w', driver='mpio', comm=comm) as f:
                 dset = f.create_dataset('test', (size, 10), dtype='f')
                 dset[rank] = np.arange(10) * (rank + 1)
             
-            # Read back
             with h5py.File('parallel_test.h5', 'r', driver='mpio', comm=comm) as f:
                 data = f['test'][rank]
                 print(f"Rank {rank} read: {data}")
@@ -117,13 +81,10 @@ jobs:
             print("Running with single process - skipping parallel HDF5 test")
         EOF
         
-        # Run with multiple processes
         mpirun -np 2 python test_mpi.py
     
-    - name: Run your tests
+    - name: Run project tests
       run: |
-        # Add your actual test commands here
-        # python -m pytest tests/
-        # or
-        # mpirun -np 4 python your_mpi_script.py
-        echo "Add your test commands here"
+        cd tests
+        python test_vector_ops.py
+        python extended_tests.py
