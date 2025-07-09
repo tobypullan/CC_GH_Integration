@@ -1,0 +1,129 @@
+name: MPI-HDF5 Workflow
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.8', '3.9', '3.10', '3.11']
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libopenmpi-dev \
+          openmpi-bin \
+          libhdf5-openmpi-dev \
+          libhdf5-dev \
+          hdf5-tools \
+          build-essential \
+          gfortran
+    
+    - name: Cache pip packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-${{ matrix.python-version }}-
+          ${{ runner.os }}-pip-
+    
+    - name: Upgrade pip and install build tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install wheel setuptools
+    
+    - name: Install mpi4py with Open-MPI
+      run: |
+        # Set environment variables for mpi4py compilation
+        export MPICC=/usr/bin/mpicc
+        export HDF5_MPI="ON"
+        pip install --no-binary mpi4py mpi4py
+    
+    - name: Install h5py with MPI support
+      run: |
+        # Install h5py with MPI support
+        export HDF5_MPI="ON"
+        export HDF5_DIR=/usr/lib/x86_64-linux-gnu/hdf5/openmpi
+        export CC=mpicc
+        pip install --no-binary h5py h5py
+    
+    - name: Install other Python dependencies
+      run: |
+        # Install your other dependencies here
+        # pip install -r requirements.txt
+        pip install numpy scipy matplotlib
+    
+    - name: Verify installations
+      run: |
+        echo "=== System Information ==="
+        lsb_release -a
+        echo ""
+        echo "=== MPI Information ==="
+        mpirun --version
+        which mpicc
+        which mpirun
+        echo ""
+        echo "=== HDF5 Information ==="
+        h5cc -showconfig | grep -E "Parallel HDF5|Version"
+        echo ""
+        echo "=== Python Information ==="
+        python --version
+        python -c "import mpi4py; print(f'mpi4py version: {mpi4py.__version__}')"
+        python -c "import h5py; print(f'h5py version: {h5py.__version__}')"
+        python -c "import h5py; print(f'h5py MPI support: {h5py.get_config().mpi}')"
+    
+    - name: Run MPI test
+      run: |
+        # Create a simple MPI test
+        cat > test_mpi.py << 'EOF'
+        from mpi4py import MPI
+        import numpy as np
+        import h5py
+        
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
+        size = comm.Get_size()
+        
+        print(f"Process {rank} of {size} is running")
+        
+        # Test h5py with MPI
+        if size > 1:
+            # Create a parallel HDF5 file
+            with h5py.File('parallel_test.h5', 'w', driver='mpio', comm=comm) as f:
+                dset = f.create_dataset('test', (size, 10), dtype='f')
+                dset[rank] = np.arange(10) * (rank + 1)
+            
+            # Read back
+            with h5py.File('parallel_test.h5', 'r', driver='mpio', comm=comm) as f:
+                data = f['test'][rank]
+                print(f"Rank {rank} read: {data}")
+        else:
+            print("Running with single process - skipping parallel HDF5 test")
+        EOF
+        
+        # Run with multiple processes
+        mpirun -np 2 python test_mpi.py
+    
+    - name: Run your tests
+      run: |
+        # Add your actual test commands here
+        # python -m pytest tests/
+        # or
+        # mpirun -np 4 python your_mpi_script.py
+        echo "Add your test commands here"
